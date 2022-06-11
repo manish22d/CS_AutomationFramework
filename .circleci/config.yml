@@ -1,0 +1,91 @@
+version: 2.1
+orbs:
+  slack: circleci/slack@4.3.0
+
+commands:
+  notify_slack_error:
+    steps:
+      - slack/notify:
+          event: fail
+          template: basic_fail_1
+          branch_pattern: master
+
+jobs:
+  build:
+
+    # directory where steps will run
+    working_directory: ~/working_dir
+
+    # user pre-build docker image
+    docker:
+      # ... with Java & firefox/chrome browsers pre-installed
+      - image: circleci/openjdk:8-jdk-browsers
+
+    steps:
+      # pull this branch
+      - checkout
+
+      # install SFDX
+      - run:
+          name: Create SFDX Folder
+          command: |
+            # Create sfdx directory
+            mkdir sfdx
+      - run:
+          name: Download CLI
+          command: |
+            # Download cli
+            wget -qO- https://developer.salesforce.com/media/salesforce-cli/sfdx-linux-amd64.tar.xz | tar xJ -C sfdx --strip-components 1
+      - run:
+          name: Install CLI
+          command: |
+            # Install the cli
+            ./sfdx/install
+
+      # using maven allows each project to specify any deps they may not have in common (eg Selenium versions, etc)
+      - run:
+          name: get maven dependancies
+          command: mvn dependency:go-offline
+
+      # write JWT rsa key to file
+      - run:
+          name: write JWT rsa key to file
+          command: echo -e $JWT_SERVER_KEY > server.key
+
+      # run tests, by specifying a TestNG xml in env var, which defines the test suite (to be consumed by surefire plugin) - TODO add logic to run a default suite if not defined in env var
+      - run:
+          name: run tests
+          command: mvn test -DJWT_CLIENT_SECRET=$JWT_CLIENT_SECRET -DSYSADMIN_USERNAME=$SYSADMIN_USERNAME -DJWT_INSTANCE_URL=$JWT_INSTANCE_URL -DPERSONA_1=$PERSONA_1 -DJWT_AUTH_PATH_TO_SERVER_KEY=server.key
+
+      # store test results
+      - run:
+          name: store test results
+          command: |
+            mkdir -p ~/test-results/
+            cp -pr target/surefire-reports ~/test-results/
+          when: always
+      - store_test_results:
+          path: ~/test-results
+      - store_artifacts:
+          path: ~/test-results 
+
+      # send slack notifications if master branch fails
+      - notify_slack_error
+
+
+workflows:
+  version: 2
+  test-build:
+    jobs:
+      - build
+  build-on-schedule:
+    triggers:
+      - schedule:
+          # cron format: min (0-59) hour (0-23) monthday (1-31) month (1-12) weekday (0-6, 0=Sun)
+          cron: "0 0 * * 0"
+          filters:
+            branches:
+              only:
+                - master
+    jobs:
+      - build

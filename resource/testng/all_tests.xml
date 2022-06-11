@@ -1,0 +1,11 @@
+<!DOCTYPE suite SYSTEM "http://testng.org/testng-1.0.dtd" >
+<suite name="All-Tests" verbose="1" parallel="methods" thread-count="1" configfailurepolicy="continue">
+
+  <test name="all-packages">
+  
+    <packages>
+    
+      <package name="test.com.cs.test.tests.*" />
+    </packages>
+  </test>
+</suite>
